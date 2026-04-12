@@ -930,14 +930,6 @@ class BaremetalNeutronAgent(service.ServiceBase):
                               "router port %s", rport.id)
 
 
-def _unregiser_deprecated_opts():
-    CONF.reset()
-    CONF.unregister_opts(
-        [CONF._groups[ironic_client.IRONIC_GROUP]._opts[opt]['opt']
-         for opt in ironic_client._deprecated_opts],
-        group=ironic_client.IRONIC_GROUP)
-
-
 def main():
     common_config.register_common_config_options()
     # Register agent configuration options (L2VNI and baremetal agent)
@@ -948,11 +940,6 @@ def main():
     # Register Neutron OVN options so we can read [ovn] section as fallback
     # for L2VNI OVN connection settings
     ovn_conf.register_opts()
-
-    # TODO(hjensas): Imports from neutron in ironic_neutron_agent registers the
-    # client options. We need to unregister the options we are deprecating
-    # first to avoid DuplicateOptError. Remove this when dropping deprecations.
-    _unregiser_deprecated_opts()
 
     # Add ML2 OVN config file to search path for OVN connection settings
     # This allows L2VNI to read Neutron's OVN configuration if available

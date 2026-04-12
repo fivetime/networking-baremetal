@@ -1,0 +1,11 @@
+---
+upgrade:
+  - |
+    The following deprecated options in the ``[ironic]`` section have been
+    removed.
+
+    - ``auth_strategy``
+    - ``ironic_url``
+    - ``os_region``
+    - ``max_retries``
+    - ``retry_interval``
