@@ -79,6 +79,12 @@ class RouterHABindingManager:
         if not self._should_manage_network(network_id):
             return
 
+        if not self._network_has_external_ports(network_id):
+            LOG.debug("Network %s has no external (baremetal/SR-IOV) ports, "
+                      "skipping router interface binding to HA chassis "
+                      "group %s", network_id, ha_chassis_group)
+            return
+
         try:
             router_ports = self._get_router_interface_ports(network_id)
 
@@ -183,6 +189,30 @@ class RouterHABindingManager:
             LOG.exception("Failed to update HA chassis group for router "
                           "port %s", port_id)
             raise
+
+    def _network_has_external_ports(self, network_id):
+        """Check whether the network has any external ports.
+
+        Router interface ports only need to be bound to the network's HA
+        chassis group in order to be collocated with that network's
+        external (baremetal/SR-IOV) ports. Binding a router interface port
+        when the network has no external ports at all pins that port (and
+        the OVN distributed router logic behind it) to a single chassis for
+        no reason, breaking distributed east-west routing and Distributed
+        Floating IP traffic for regular VMs hosted on any other chassis.
+
+        :param network_id: Neutron network UUID
+        :returns: True if the network's logical switch has at least one
+                 port of type 'external', False otherwise (including when
+                 the logical switch cannot be found).
+        """
+        ls_name = ovn_utils.ovn_name(network_id)
+        ls = self.ovn_nb_idl.lookup('Logical_Switch', ls_name, default=None)
+        if not ls:
+            return False
+
+        return any(getattr(lsp, 'type', None) == ovn_const.LSP_TYPE_EXTERNAL
+                   for lsp in ls.ports)
 
     def _should_manage_network(self, network_id):
         """Check if this agent should manage the network via hash ring.
@@ -321,10 +351,13 @@ class RouterHABindingManager:
             if not network_ha_groups:
                 return
 
-            # Filter to only networks this agent should manage
+            # Filter to only networks this agent should manage that
+            # actually have external ports to collocate router interface
+            # ports with.
             managed_network_ids = [
                 nid for nid in network_ha_groups.keys()
-                if self._should_manage_network(nid)
+                if (self._should_manage_network(nid)
+                    and self._network_has_external_ports(nid))
             ]
 
             if not managed_network_ids:
