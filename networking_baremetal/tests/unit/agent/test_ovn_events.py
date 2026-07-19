@@ -15,8 +15,8 @@
 """Unit tests for OVN event handlers."""
 
 from unittest import mock
+import uuid
 
-from neutron.plugins.ml2.drivers.ovn.mech_driver.ovsdb import ovsdb_monitor
 from neutron.tests import base as tests_base
 from ovsdbapp.backend.ovs_idl import event as row_event
 from tooz import hashring
@@ -46,11 +46,12 @@ class TestLocalnetPortEvent(tests_base.BaseTestCase):
     def _create_mock_row(self, **kwargs):
         """Helper to create a mock row with required OVN attributes.
 
-        BaseEvent.matches() checks row._table.name, so we need to ensure
+        RowEvent.matches() checks row._table.name, so we need to ensure
         all mock rows have this attribute set correctly.
         """
         row = mock.MagicMock()
         row._table.name = 'Logical_Switch_Port'
+        row.uuid = uuid.uuid4()
         for key, value in kwargs.items():
             if key == 'tag' and value is not None:
                 # tag should be a list
@@ -72,8 +73,7 @@ class TestLocalnetPortEvent(tests_base.BaseTestCase):
         self.assertEqual(self.event.table, 'Logical_Switch_Port')
 
     def test_event_inherits_from_base_event(self):
-        """Test LocalnetPortEvent inherits from BaseEvent."""
-        self.assertIsInstance(self.event, ovsdb_monitor.BaseEvent)
+        """Test LocalnetPortEvent inherits from RowEvent."""
         self.assertIsInstance(self.event, row_event.RowEvent)
 
     def test_matches_l2vni_localnet_port_owned_by_agent(self):
@@ -96,7 +96,7 @@ class TestLocalnetPortEvent(tests_base.BaseTestCase):
             name=f'neutron-{network_id}-localnet-physnet1'
         )
 
-        # BaseEvent.matches() filters out UPDATE events
+        # RowEvent.matches() filters out UPDATE events
         result = self.event.matches(row_event.RowEvent.ROW_UPDATE, row)
 
         self.assertFalse(result)

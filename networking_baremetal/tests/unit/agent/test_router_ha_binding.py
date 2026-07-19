@@ -15,6 +15,7 @@
 """Unit tests for Router HA Binding Manager."""
 
 from unittest import mock
+import uuid
 
 from neutron.common.ovn import constants as ovn_const
 from neutron.tests import base as tests_base
@@ -53,8 +54,8 @@ class FakeLogicalRouterPort:
 class FakeHAChassisGroup:
     """Fake OVN HA_Chassis_Group object."""
 
-    def __init__(self, uuid, external_ids=None):
-        self.uuid = uuid
+    def __init__(self, uuid_, external_ids=None):
+        self.uuid = uuid_
         self.external_ids = external_ids or {}
 
 
@@ -449,13 +450,15 @@ class TestRouterHABindingManager(tests_base.BaseTestCase):
         """Test _get_networks_with_ha_chassis_groups returns groups."""
         network1_id = 'network-1'
         network2_id = 'network-2'
+        ha_group1_id = uuid.uuid4()
+        ha_group2_id = uuid.uuid4()
 
         ha_group1 = FakeHAChassisGroup(
-            'ha-group-1',
+            ha_group1_id,
             external_ids={ovn_const.OVN_NETWORK_ID_EXT_ID_KEY: network1_id}
         )
         ha_group2 = FakeHAChassisGroup(
-            'ha-group-2',
+            ha_group2_id,
             external_ids={ovn_const.OVN_NETWORK_ID_EXT_ID_KEY: network2_id}
         )
 
@@ -465,8 +468,8 @@ class TestRouterHABindingManager(tests_base.BaseTestCase):
         result = self.manager._get_networks_with_ha_chassis_groups()
 
         self.assertEqual(len(result), 2)
-        self.assertEqual(result[network1_id], 'ha-group-1')
-        self.assertEqual(result[network2_id], 'ha-group-2')
+        self.assertEqual(result[network1_id], ha_group1_id)
+        self.assertEqual(result[network2_id], ha_group2_id)
 
     def test_get_networks_with_ha_chassis_groups_accepts_unified_groups(
             self):
@@ -479,13 +482,15 @@ class TestRouterHABindingManager(tests_base.BaseTestCase):
         """
         network_id = 'network-1'
         router_id = 'router-1'
+        network_group_id = uuid.uuid4()
+        router_group_id = uuid.uuid4()
 
         network_group = FakeHAChassisGroup(
-            'ha-group-network',
+            network_group_id,
             external_ids={ovn_const.OVN_NETWORK_ID_EXT_ID_KEY: network_id}
         )
         router_group = FakeHAChassisGroup(
-            'ha-group-router',
+            router_group_id,
             external_ids={
                 ovn_const.OVN_NETWORK_ID_EXT_ID_KEY: network_id,
                 ovn_const.OVN_ROUTER_ID_EXT_ID_KEY: router_id
@@ -499,7 +504,7 @@ class TestRouterHABindingManager(tests_base.BaseTestCase):
 
         self.assertEqual(len(result), 1)
         # The last group found is used (router_group in this case)
-        self.assertEqual(result[network_id], 'ha-group-router')
+        self.assertEqual(result[network_id], router_group_id)
 
     def test_get_networks_with_ha_chassis_groups_empty(self):
         """Test _get_networks_with_ha_chassis_groups with no groups."""
@@ -530,9 +535,10 @@ class TestRouterHABindingManager(tests_base.BaseTestCase):
             self):
         """Test handles rows without external_ids."""
         network_id = 'network-1'
+        ha_group1_id = uuid.uuid4()
 
         good_group = FakeHAChassisGroup(
-            'ha-group-1',
+            ha_group1_id,
             external_ids={ovn_const.OVN_NETWORK_ID_EXT_ID_KEY: network_id}
         )
         bad_group = mock.Mock(spec=['uuid'])
@@ -544,7 +550,7 @@ class TestRouterHABindingManager(tests_base.BaseTestCase):
         result = self.manager._get_networks_with_ha_chassis_groups()
 
         self.assertEqual(len(result), 1)
-        self.assertEqual(result[network_id], 'ha-group-1')
+        self.assertEqual(result[network_id], ha_group1_id)
 
     def test_reconcile_success(self):
         """Test reconcile processes networks and updates ports."""
@@ -870,6 +876,7 @@ class TestHAChassisGroupNetworkEvent(tests_base.BaseTestCase):
         """Helper to create a mock HA_Chassis_Group row."""
         row = mock.MagicMock()
         row._table.name = 'HA_Chassis_Group'
+        row.uuid = uuid.uuid4()
         for key, value in kwargs.items():
             setattr(row, key, value)
         return row
@@ -889,17 +896,13 @@ class TestHAChassisGroupNetworkEvent(tests_base.BaseTestCase):
 
     def test_event_inherits_from_base_event(self):
         """Test HAChassisGroupNetworkEvent inherits from BaseEvent."""
-        from neutron.plugins.ml2.drivers.ovn.mech_driver.ovsdb import \
-            ovsdb_monitor
         from ovsdbapp.backend.ovs_idl import event as row_event
-        self.assertIsInstance(self.event, ovsdb_monitor.BaseEvent)
         self.assertIsInstance(self.event, row_event.RowEvent)
 
     def test_match_fn_network_level_group_owned_by_agent(self):
         """Test match_fn returns True for network-level group."""
         network_id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
         row = self._create_mock_row(
-            uuid='ha-group-1',
             external_ids={ovn_const.OVN_NETWORK_ID_EXT_ID_KEY: network_id}
         )
 
@@ -913,7 +916,6 @@ class TestHAChassisGroupNetworkEvent(tests_base.BaseTestCase):
         network_id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
         router_id = 'router-1'
         row = self._create_mock_row(
-            uuid='ha-group-1',
             external_ids={
                 ovn_const.OVN_NETWORK_ID_EXT_ID_KEY: network_id,
                 ovn_const.OVN_ROUTER_ID_EXT_ID_KEY: router_id
@@ -928,7 +930,6 @@ class TestHAChassisGroupNetworkEvent(tests_base.BaseTestCase):
     def test_match_fn_rejects_group_without_network_id(self):
         """Test match_fn rejects groups without network_id."""
         row = self._create_mock_row(
-            uuid='ha-group-1',
             external_ids={}
         )
 
@@ -939,7 +940,7 @@ class TestHAChassisGroupNetworkEvent(tests_base.BaseTestCase):
 
     def test_match_fn_rejects_group_without_external_ids(self):
         """Test match_fn rejects groups without external_ids attribute."""
-        row = self._create_mock_row(uuid='ha-group-1')
+        row = self._create_mock_row()
         del row.external_ids
 
         from ovsdbapp.backend.ovs_idl import event as row_event
@@ -951,7 +952,6 @@ class TestHAChassisGroupNetworkEvent(tests_base.BaseTestCase):
         """Test match_fn rejects groups not owned by agent (hash ring)."""
         network_id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
         row = self._create_mock_row(
-            uuid='ha-group-1',
             external_ids={ovn_const.OVN_NETWORK_ID_EXT_ID_KEY: network_id}
         )
 
@@ -968,7 +968,6 @@ class TestHAChassisGroupNetworkEvent(tests_base.BaseTestCase):
         """Test match_fn rejects rows from wrong table."""
         network_id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
         row = self._create_mock_row(
-            uuid='ha-group-1',
             external_ids={ovn_const.OVN_NETWORK_ID_EXT_ID_KEY: network_id}
         )
         row._table.name = 'Logical_Router_Port'  # Wrong table
@@ -982,7 +981,6 @@ class TestHAChassisGroupNetworkEvent(tests_base.BaseTestCase):
         """Test match_fn accepts CREATE events."""
         network_id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
         row = self._create_mock_row(
-            uuid='ha-group-1',
             external_ids={ovn_const.OVN_NETWORK_ID_EXT_ID_KEY: network_id}
         )
 
@@ -995,7 +993,6 @@ class TestHAChassisGroupNetworkEvent(tests_base.BaseTestCase):
         """Test match_fn accepts UPDATE events."""
         network_id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
         row = self._create_mock_row(
-            uuid='ha-group-1',
             external_ids={ovn_const.OVN_NETWORK_ID_EXT_ID_KEY: network_id}
         )
 
@@ -1008,7 +1005,6 @@ class TestHAChassisGroupNetworkEvent(tests_base.BaseTestCase):
         """Test match_fn rejects DELETE events."""
         network_id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
         row = self._create_mock_row(
-            uuid='ha-group-1',
             external_ids={ovn_const.OVN_NETWORK_ID_EXT_ID_KEY: network_id}
         )
 
@@ -1020,7 +1016,7 @@ class TestHAChassisGroupNetworkEvent(tests_base.BaseTestCase):
     def test_run_triggers_router_interface_binding(self):
         """Test run() triggers router interface binding."""
         network_id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
-        ha_group_uuid = 'ha-group-1'
+        ha_group_uuid = uuid.uuid4(),
         row = self._create_mock_row(
             uuid=ha_group_uuid,
             external_ids={ovn_const.OVN_NETWORK_ID_EXT_ID_KEY: network_id}
@@ -1037,7 +1033,6 @@ class TestHAChassisGroupNetworkEvent(tests_base.BaseTestCase):
         """Test run() handles missing router HA binding manager."""
         network_id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
         row = self._create_mock_row(
-            uuid='ha-group-1',
             external_ids={ovn_const.OVN_NETWORK_ID_EXT_ID_KEY: network_id}
         )
 
@@ -1052,7 +1047,6 @@ class TestHAChassisGroupNetworkEvent(tests_base.BaseTestCase):
         """Test run() handles missing router_ha_binding attribute."""
         network_id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
         row = self._create_mock_row(
-            uuid='ha-group-1',
             external_ids={ovn_const.OVN_NETWORK_ID_EXT_ID_KEY: network_id}
         )
 
@@ -1065,7 +1059,7 @@ class TestHAChassisGroupNetworkEvent(tests_base.BaseTestCase):
 
     def test_run_handles_attribute_error(self):
         """Test run() handles AttributeError gracefully."""
-        row = self._create_mock_row(uuid='ha-group-1')
+        row = self._create_mock_row()
         # Missing external_ids will cause AttributeError
         del row.external_ids
 
@@ -1076,7 +1070,6 @@ class TestHAChassisGroupNetworkEvent(tests_base.BaseTestCase):
     def test_run_handles_key_error(self):
         """Test run() handles KeyError gracefully."""
         row = self._create_mock_row(
-            uuid='ha-group-1',
             external_ids={}  # No network_id key
         )
 

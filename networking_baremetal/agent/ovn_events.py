@@ -15,14 +15,13 @@
 """OVN RowEvent handlers for L2VNI reconciliation."""
 
 from neutron.common.ovn import constants as ovn_const
-from neutron.plugins.ml2.drivers.ovn.mech_driver.ovsdb import ovsdb_monitor
 from oslo_log import log as logging
 from ovsdbapp.backend.ovs_idl import event as row_event
 
 LOG = logging.getLogger(__name__)
 
 
-class LocalnetPortEvent(ovsdb_monitor.BaseEvent):
+class LocalnetPortEvent(row_event.RowEvent):
     """Trigger L2VNI reconciliation when localnet ports are created or deleted.
 
     Watches for CREATE and DELETE events on Logical_Switch_Port table where
@@ -48,7 +47,7 @@ class LocalnetPortEvent(ovsdb_monitor.BaseEvent):
         self.agent = agent
         self.hashring = agent.member_manager.hashring
         self.agent_id = agent.agent_id
-        super().__init__()
+        super().__init__(self.events, self.table, None)
 
     def match_fn(self, event, row, old=None):
         """Filter for L2VNI localnet ports owned by this agent.
@@ -59,7 +58,7 @@ class LocalnetPortEvent(ovsdb_monitor.BaseEvent):
         3. This agent owns the network (hash ring check)
 
         Note: Event type filtering (CREATE/DELETE only) is handled by the
-        parent BaseEvent.matches() method, which ensures UPDATE events
+        parent RowEvent.matches() method, which ensures UPDATE events
         are filtered out before this method is called.
 
         :param event: Event type (ROW_CREATE or ROW_DELETE)
@@ -172,7 +171,7 @@ class LocalnetPortEvent(ovsdb_monitor.BaseEvent):
             return None
 
 
-class HAChassisGroupNetworkEvent(ovsdb_monitor.BaseEvent):
+class HAChassisGroupNetworkEvent(row_event.RowEvent):
     """Trigger router HA binding for HA Chassis group create/update.
 
     Watches for CREATE and UPDATE events on HA_Chassis_Group table where
@@ -198,7 +197,7 @@ class HAChassisGroupNetworkEvent(ovsdb_monitor.BaseEvent):
         self.agent = agent
         self.hashring = agent.member_manager.hashring
         self.agent_id = agent.agent_id
-        super().__init__()
+        super().__init__(self.events, self.table, None)
 
     def match_fn(self, event, row, old=None):
         """Filter for HA chassis groups with network_id owned by this agent.
