@@ -24,10 +24,7 @@ from neutron.agent import rpc as agent_rpc
 from neutron.common import config as common_config
 from neutron.common.ovn import utils as ovn_utils
 from neutron.conf.agent import common as neutron_agent_config
-try:
-    from neutron.conf.plugins.ml2.drivers.ovn import ovn_conf
-except ImportError:
-    ovn_conf = None
+from neutron.conf.plugins.ml2.drivers.ovn import ovn_conf
 from neutron_lib.agent import topics
 from neutron_lib import constants as n_const
 from neutron_lib import context
@@ -950,13 +947,7 @@ def main():
 
     # Register Neutron OVN options so we can read [ovn] section as fallback
     # for L2VNI OVN connection settings
-    if ovn_conf is not None:
-        try:
-            ovn_conf.register_opts()
-        except Exception as e:
-            # If neutron OVN config can't be registered, L2VNI will use
-            # its own config or defaults
-            LOG.debug('Could not register Neutron OVN config options: %s', e)
+    ovn_conf.register_opts()
 
     # TODO(hjensas): Imports from neutron in ironic_neutron_agent registers the
     # client options. We need to unregister the options we are deprecating
