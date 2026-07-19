@@ -99,9 +99,9 @@ _NCCLIENT_OPTS = [
     cfg.StrOpt('username',
                help='The username to use for SSH authentication.',
                sample_default='netconf'),
-    cfg.IntOpt('port', default=830,
-               help=('The port to use for connection to the netconf '
-                     'device.')),
+    cfg.PortOpt('port', default=830,
+                help=('The port to use for connection to the netconf '
+                      'device.')),
     cfg.StrOpt('password',
                help=('The password used if using password authentication, or '
                      'the passphrase to use for unlocking keys that require '
