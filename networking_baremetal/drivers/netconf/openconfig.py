@@ -108,7 +108,8 @@ _NCCLIENT_OPTS = [
                      'it. (To disable attempting key authentication '
                      'altogether, set options *allow_agent* and '
                      '*look_for_keys* to `False`.'),
-               sample_default='secret'),
+               sample_default='secret',
+               secret=True),
     cfg.StrOpt('key_filename',
                help='Private key filename',
                default='~/.ssh/id_rsa'),
