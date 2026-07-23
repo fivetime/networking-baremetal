@@ -203,6 +203,27 @@ Configuration Parameters
     ``physical_network``. If not set and the port lacks ``physical_network``
     in its binding profile, port binding will fail.
 
+``l2vni_subport_anchor_network``
+    **Type**: String
+
+    **Default**: ``l2vni-subport-anchor``
+
+    **Section**: ``[l2vni]`` (shared with the L2VNI trunk agent)
+
+    **Description**: Name of the shared subport anchor network. The mechanism
+    driver reads this value to identify the anchor network and **skip port
+    binding** for ports on it — anchor-network ports are metadata only (they
+    exist to be added to trunks and trigger switch management callbacks) and
+    do not require hierarchical binding or actual network connectivity.
+
+    .. note::
+       This option lives in the ``[l2vni]`` section (not ``[baremetal_l2vni]``)
+       because it is shared with the L2VNI trunk reconciliation agent; the
+       mechanism driver and the agent must be configured with the same value.
+       For the full option reference — including
+       ``l2vni_subport_anchor_network_type`` and ``l2vni_auto_create_networks``
+       — see :doc:`/admin/l2vni-trunk-reconciliation`.
+
 Port Binding Profile
 --------------------
 
