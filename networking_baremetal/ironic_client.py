@@ -22,43 +22,19 @@ LOG = logging.getLogger(__name__)
 _IRONIC_SESSION = None
 IRONIC_GROUP = 'ironic'
 
-_deprecated_opts = {}
-_deprecated_opts['endpoint_override'] = [
-    cfg.DeprecatedOpt('ironic_url', group=IRONIC_GROUP)]
-_deprecated_opts['region_name'] = [
-    cfg.DeprecatedOpt('os_region', group=IRONIC_GROUP)]
-_deprecated_opts['status_code_retries'] = [
-    cfg.DeprecatedOpt('max_retries', group=IRONIC_GROUP)]
-_deprecated_opts['status_code_retry_delay'] = [
-    cfg.DeprecatedOpt('retry_interval', group=IRONIC_GROUP)]
-
-
-IRONIC_OPTS = [
-    cfg.StrOpt('auth_strategy',
-               default='keystone',
-               deprecated_for_removal=True,
-               deprecated_reason='This option is no longer used, please use '
-                                 'the [ironic]/auth_type option instead.',
-               choices=('keystone', 'noauth'),
-               help='Method to use for authentication: noauth or keystone.'),
-]
-
 
 def list_opts():
     return [
-        (IRONIC_GROUP, IRONIC_OPTS
-         + loading.get_adapter_conf_options(deprecated_opts=_deprecated_opts)
-         + loading.get_session_conf_options(deprecated_opts=_deprecated_opts)
+        (IRONIC_GROUP,
+         loading.get_adapter_conf_options()
+         + loading.get_session_conf_options()
          + loading.get_auth_plugin_conf_options('v3password'))]
 
 
 def get_session(group):
-    loading.register_adapter_conf_options(CONF, group,
-                                          deprecated_opts=_deprecated_opts)
-    loading.register_session_conf_options(CONF, group,
-                                          deprecated_opts=_deprecated_opts)
+    loading.register_adapter_conf_options(CONF, group)
+    loading.register_session_conf_options(CONF, group)
     loading.register_auth_conf_options(CONF, group)
-    CONF.register_opts(IRONIC_OPTS, group=group)
     auth = loading.load_auth_from_conf_options(CONF, group)
     session = loading.load_session_from_conf_options(CONF, group, auth=auth)
     return session
