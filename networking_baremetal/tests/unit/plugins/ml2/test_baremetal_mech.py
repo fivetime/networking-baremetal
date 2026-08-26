@@ -670,3 +670,68 @@ class TestBaremetalMechDriverFakeDriver(base.AgentMechanismBaseTestCase):
         self.mock_driver.delete_port.assert_called_once_with(
             m_pc, m_pc.current['binding:profile']['local_link_information'],
             current=True)
+
+
+class TestGetDevices(base.AgentMechanismBaseTestCase):
+    """Tests for building the device map the mechanism driver consumes."""
+
+    def setUp(self):
+        super(TestGetDevices, self).setUp()
+        self.conf = self.useFixture(config_fixture.Config())
+
+    def _enable(self, **devices):
+        """Declare and configure device sections.
+
+        :param devices: mapping of device name to the options to set on it.
+        :returns: the result of config.get_devices()
+        """
+        self.conf.config(enabled_devices=list(devices),
+                         group='networking_baremetal')
+        for name, opts in devices.items():
+            self.conf.register_opts(config._device_opts, group=name)
+            self.conf.config(group=name, **opts)
+        return config.get_devices()
+
+    def test_no_devices(self):
+        self.assertEqual({}, self._enable())
+
+    def test_device_indexed_by_switch_id(self):
+        devices = self._enable(sw1={'driver': 'netconf-openconfig',
+                                    'switch_id': 'aa:bb:cc:dd:ee:01'})
+
+        self.assertEqual({'aa:bb:cc:dd:ee:01': 'sw1'}, devices)
+
+    def test_device_indexed_by_switch_info(self):
+        devices = self._enable(sw1={'driver': 'netconf-openconfig',
+                                    'switch_info': 'switch-one'})
+
+        self.assertEqual({'switch-one': 'sw1'}, devices)
+
+    def test_device_indexed_by_both(self):
+        devices = self._enable(sw1={'driver': 'netconf-openconfig',
+                                    'switch_id': 'aa:bb:cc:dd:ee:01',
+                                    'switch_info': 'switch-one'})
+
+        self.assertEqual({'aa:bb:cc:dd:ee:01': 'sw1',
+                          'switch-one': 'sw1'}, devices)
+
+    def test_device_without_driver_is_ignored(self):
+        # The device is logged as ignored, so it must not be returned: the
+        # mechanism driver passes every returned device to driver_mgr(),
+        # which cannot look up an entrypoint named None.
+        devices = self._enable(sw1={'switch_id': 'aa:bb:cc:dd:ee:01'})
+
+        self.assertEqual({}, devices)
+
+    def test_device_without_identity_is_ignored(self):
+        devices = self._enable(sw1={'driver': 'netconf-openconfig'})
+
+        self.assertEqual({}, devices)
+
+    def test_invalid_device_does_not_hide_valid_ones(self):
+        devices = self._enable(
+            broken={'switch_id': 'aa:bb:cc:dd:ee:01'},
+            working={'driver': 'netconf-openconfig',
+                     'switch_id': 'aa:bb:cc:dd:ee:02'})
+
+        self.assertEqual({'aa:bb:cc:dd:ee:02': 'working'}, devices)

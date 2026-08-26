@@ -1,0 +1,9 @@
+---
+fixes:
+  - |
+    A device in ``[networking_baremetal] enabled_devices`` that does not set
+    ``driver`` is now actually skipped. Previously it was logged as being
+    ignored but was still returned to the mechanism driver, which then looked
+    up a driver entrypoint named ``None``. The service failed to start with
+    ``TypeError: sequence item 0: expected str instance, NoneType found``,
+    which gave no indication of the option that was missing.

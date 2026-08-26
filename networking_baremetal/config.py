@@ -94,9 +94,11 @@ def get_devices():
     for dev in CONF.networking_baremetal.enabled_devices:
         if not CONF[dev].driver:
             LOG.error('IGNORING invalid device %s, driver not specified.', dev)
+            continue
         if not CONF[dev].switch_id and not CONF[dev].switch_info:
             LOG.error('IGNORING invalid device %s, switch_id and/or '
                       'switch_info is required', dev)
+            continue
 
         if CONF[dev].switch_id:
             devices[CONF[dev].switch_id] = dev
