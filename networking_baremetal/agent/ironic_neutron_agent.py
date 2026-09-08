@@ -461,6 +461,33 @@ class BaremetalNeutronAgent(service.ServiceBase):
             'action': 'update'}
 
     def _report_state(self):
+        """Report agent state for each ironic node this agent owns.
+
+        Never lets an exception escape. This runs on a
+        FixedIntervalLoopingCall, and oslo stops such a loop permanently
+        the first time the function raises - while the process stays up,
+        the other loops keep running and nothing logs a second time. The
+        agents then go stale silently: neutron marks them dead after
+        agent_down_time, the baremetal mechanism driver stops binding
+        ports, and binding falls through to whatever driver is next in
+        mechanism_drivers.
+
+        Seen in production 2026-09-03: one transient DNS failure
+        resolving the ironic API endpoint raised
+        requests.exceptions.ConnectionError, which is not an
+        OpenStackCloudException and so was not caught below. State
+        reporting stopped for five days while the pod stayed Running,
+        0 restarts, with no liveness probe able to tell.
+        """
+        try:
+            self._do_report_state()
+        except Exception:
+            # A failed cycle is recoverable; a dead loop is not.
+            LOG.exception('Unexpected error while reporting agent state. '
+                          'Retrying in %s seconds.',
+                          CONF.AGENT.report_interval)
+
+    def _do_report_state(self):
         node_states = {}
         conductor_groups_config = getattr(CONF, 'conductor_groups', None)
         conductor_groups = getattr(
@@ -469,13 +496,15 @@ class BaremetalNeutronAgent(service.ServiceBase):
         if conductor_groups:
             LOG.info("Using conductor groups filter: %s", conductor_groups)
 
-        ironic_ports = self.ironic_client.ports(
-            details=True, conductor_groups=conductor_groups)
-
-        # NOTE: the above calls returns a generator, so we need to handle
-        # exceptions that happen just before the first loop iteration, when
-        # the actual request to ironic happens
+        # NOTE: ports() returns a generator, so the request to ironic is
+        # usually made just before the first loop iteration - but not
+        # always: a DNS or connection failure can raise while the request
+        # is being built. Both are inside the try for that reason; with
+        # the call outside it, a name resolution failure skipped the
+        # client replacement below entirely.
         try:
+            ironic_ports = self.ironic_client.ports(
+                details=True, conductor_groups=conductor_groups)
             for port in ironic_ports:
                 node = port.node_id
                 if (self.agent_id not in
@@ -487,7 +516,12 @@ class BaremetalNeutronAgent(service.ServiceBase):
                     node]["configurations"]["bridge_mappings"]
                 if port.physical_network is not None:
                     mapping[port.physical_network] = "yes"
-        except sdk_exc.OpenStackCloudException:
+        except Exception:
+            # Not just OpenStackCloudException: a DNS or TCP failure
+            # reaching the ironic API surfaces as
+            # requests.exceptions.ConnectionError, and an expired token
+            # can surface as a keystoneauth exception. None of those are
+            # SDK exceptions, and letting one through kills the loop.
             LOG.exception("Failed to get ironic ports data! "
                           "Not reporting state.")
             try:

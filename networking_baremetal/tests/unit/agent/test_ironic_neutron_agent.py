@@ -20,11 +20,13 @@ from neutron.tests import base as tests_base
 from neutron_lib import constants as n_const
 from oslo_config import cfg
 from oslo_utils import timeutils
+from requests import exceptions as requests_exc
 from tooz import hashring
 
 from networking_baremetal.agent import agent_config
 from networking_baremetal.agent import ironic_neutron_agent
 from networking_baremetal import constants
+from networking_baremetal import ironic_client
 
 
 CONF = cfg.CONF
@@ -561,3 +563,65 @@ class TestBaremetalAgentConfig(tests_base.BaseTestCase):
                         if isinstance(opt, cfg.BoolOpt)]
         for opt in boolean_opts:
             self.assertIsNotNone(opt.default)
+
+
+class TestReportStateNeverDies(tests_base.BaseTestCase):
+    """_report_state must not let an exception reach the looping call.
+
+    It runs on a FixedIntervalLoopingCall, and oslo stops such a loop for
+    good the first time the function raises. The process keeps running,
+    the other loops keep ticking, and the agents go stale without a
+    second log line - which is how a single transient DNS failure ended
+    state reporting for five days in production (2026-09-03).
+    """
+
+    def setUp(self):
+        super(TestReportStateNeverDies, self).setUp()
+        agent_config.register_baremetal_agent_opts(CONF)
+        self.agent = mock.MagicMock(spec=ironic_neutron_agent
+                                    .BaremetalNeutronAgent)
+        self.agent.agent_id = 'test-agent-id'
+        self.agent.member_manager = mock.MagicMock()
+        self.agent.member_manager.hashring = hashring.HashRing(
+            [self.agent.agent_id])
+        self.agent.reported_nodes = {}
+        self.agent._report_state = (
+            ironic_neutron_agent.BaremetalNeutronAgent
+            ._report_state.__get__(self.agent))
+        self.agent._do_report_state = (
+            ironic_neutron_agent.BaremetalNeutronAgent
+            ._do_report_state.__get__(self.agent))
+
+    def test_transport_error_does_not_escape(self):
+        # requests raises this for a DNS failure reaching the ironic API.
+        # It is not an OpenStackCloudException, which is exactly why it
+        # used to escape.
+        self.agent.ironic_client = mock.MagicMock()
+        self.agent.ironic_client.ports.side_effect = (
+            requests_exc.ConnectionError('name resolution failed'))
+        with mock.patch.object(ironic_client, 'get_client',
+                               autospec=True) as mock_get_client:
+            mock_get_client.return_value = mock.MagicMock()
+            self.agent._report_state()
+        # The client is replaced so the next cycle does not reuse a
+        # broken connection pool.
+        mock_get_client.assert_called_once_with()
+
+    def test_unexpected_error_does_not_escape(self):
+        # Anything at all: the loop matters more than the cycle.
+        self.agent._do_report_state = mock.MagicMock(
+            side_effect=RuntimeError('boom'))
+        self.agent._report_state()
+        self.agent._do_report_state.assert_called_once_with()
+
+    def test_client_replacement_failure_stops_the_agent(self):
+        # The one case that should still stop: we cannot even build a
+        # new client. That behaviour predates this change; keep it.
+        self.agent.ironic_client = mock.MagicMock()
+        self.agent.ironic_client.ports.side_effect = (
+            requests_exc.ConnectionError('name resolution failed'))
+        with mock.patch.object(ironic_client, 'get_client',
+                               autospec=True) as mock_get_client:
+            mock_get_client.side_effect = RuntimeError('no client')
+            self.agent._report_state()
+        self.agent.stop.assert_called_once_with(failure=True)
