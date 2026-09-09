@@ -230,6 +230,18 @@ BAREMETAL_AGENT_OPTS = [
              'post-upgrade). A value of 60 means each agent will start '
              'reconciliation within 0-60 seconds of startup. Matches '
              'l2vni_startup_jitter_max for consistency.'),
+    cfg.StrOpt(
+        'heartbeat_file',
+        default='',
+        help='Path of a file the agent touches at the end of every '
+             'state-report cycle, whether or not the cycle succeeded. '
+             'Empty (the default) disables it. An external liveness '
+             'probe can compare the file mtime with [AGENT] '
+             'report_interval: a file older than a few intervals means '
+             'the report loop is dead or stuck, which neutron otherwise '
+             'only shows as the per-node agents going dead while the '
+             'process stays up. A failed cycle is retried by the loop '
+             'and does not need a restart, so it still touches the file.'),
 ]
 
 

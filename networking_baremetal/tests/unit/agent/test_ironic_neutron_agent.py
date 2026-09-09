@@ -14,6 +14,10 @@
 #    under the License.
 
 import datetime
+import os
+import shutil
+import tempfile
+import time
 from unittest import mock
 
 from neutron.tests import base as tests_base
@@ -591,6 +595,9 @@ class TestReportStateNeverDies(tests_base.BaseTestCase):
         self.agent._do_report_state = (
             ironic_neutron_agent.BaremetalNeutronAgent
             ._do_report_state.__get__(self.agent))
+        self.agent._touch_heartbeat_file = (
+            ironic_neutron_agent.BaremetalNeutronAgent
+            ._touch_heartbeat_file.__get__(self.agent))
 
     def test_transport_error_does_not_escape(self):
         # requests raises this for a DNS failure reaching the ironic API.
@@ -625,3 +632,42 @@ class TestReportStateNeverDies(tests_base.BaseTestCase):
             mock_get_client.side_effect = RuntimeError('no client')
             self.agent._report_state()
         self.agent.stop.assert_called_once_with(failure=True)
+
+    def _heartbeat_path(self):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        path = os.path.join(d, 'heartbeat')
+        CONF.set_override('heartbeat_file', path, group='baremetal_agent')
+        return path
+
+    def test_heartbeat_file_touched_after_a_good_cycle(self):
+        path = self._heartbeat_path()
+        self.agent._do_report_state = mock.MagicMock()
+        self.agent._report_state()
+        self.assertTrue(os.path.exists(path))
+
+    def test_heartbeat_file_touched_after_a_failed_cycle(self):
+        # A failed cycle is not a reason to restart the process; only a
+        # loop that stops ticking is. So the probe file moves either way.
+        path = self._heartbeat_path()
+        with open(path, 'w'):
+            pass
+        stale = time.time() - 3600
+        os.utime(path, (stale, stale))
+        self.agent._do_report_state = mock.MagicMock(
+            side_effect=RuntimeError('boom'))
+        self.agent._report_state()
+        self.assertGreater(os.stat(path).st_mtime, stale + 1800)
+
+    def test_heartbeat_file_off_by_default(self):
+        self.agent._do_report_state = mock.MagicMock()
+        with mock.patch.object(os, 'utime', autospec=True) as mock_utime:
+            self.agent._report_state()
+        mock_utime.assert_not_called()
+
+    def test_heartbeat_file_unwritable_does_not_escape(self):
+        CONF.set_override('heartbeat_file', '/proc/does-not-exist/hb',
+                          group='baremetal_agent')
+        self.agent._do_report_state = mock.MagicMock()
+        self.agent._report_state()
+        self.agent._do_report_state.assert_called_once_with()

@@ -486,6 +486,27 @@ class BaremetalNeutronAgent(service.ServiceBase):
             LOG.exception('Unexpected error while reporting agent state. '
                           'Retrying in %s seconds.',
                           CONF.AGENT.report_interval)
+        finally:
+            self._touch_heartbeat_file()
+
+    def _touch_heartbeat_file(self):
+        """Record that the report loop ticked, for a liveness probe.
+
+        Touched after every cycle, failed ones included: the loop retries
+        a failed cycle by itself, and restarting the process would not
+        make ironic reachable any sooner. What a restart does fix is a
+        loop that no longer ticks - dead, or stuck in a call that never
+        returns - and that is exactly what a stale mtime means.
+        """
+        path = CONF.baremetal_agent.heartbeat_file
+        if not path:
+            return
+        try:
+            with open(path, 'a'):
+                pass
+            os.utime(path, None)
+        except OSError:
+            LOG.exception('Failed to touch heartbeat file %s', path)
 
     def _do_report_state(self):
         node_states = {}
